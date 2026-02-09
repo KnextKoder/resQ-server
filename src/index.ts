@@ -2,11 +2,13 @@ import { Elysia, t } from "elysia"
 import { cors } from "@elysiajs/cors"
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai"
 import { findClosestResponder, findResponder, sendEmergencyAlert, sendEmergencyNotification } from "./gemini"
+import { db } from "./db"
+import { emergencySignals } from "./db/schema"
 
 
 const app = new Elysia()
-.use(cors())
-.get('/', () => {
+  .use(cors())
+  .get('/', () => {
     return { status: "online", message: "🦊 resQ server is running" }
   })
 
@@ -16,7 +18,7 @@ const app = new Elysia()
     console.log("🚨 Received emergency signal")
     console.log("📍 Location:", latitude, longitude)
     console.log("🎤 Audio:", audio.name, audio.size, "bytes")
-    
+
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" })
       const arrayBuffer = await audio.arrayBuffer()
@@ -40,7 +42,7 @@ const app = new Elysia()
         JSON Output Schema:
         {
           "category": "MEDICAL" | "FIRE" | "POLICE" | "ACCIDENT" | "TERRORIST_ATTACK" | "OTHER",
-          "risk_level": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+          "risk_level": "LOW" | "MEDIUM" | "HIGH",
           "transcript": "exact transcription of speech",
           "dispatch_message": "concise message used for dispatch",
           "recommended_action": "specific action for responders",
@@ -131,6 +133,21 @@ const app = new Elysia()
       const analysis = JSON.parse(jsonString)
 
       console.log("✅ Emergency Cycle Complete:", analysis)
+
+      // Log signal to database
+      try {
+        await db.insert(emergencySignals).values({
+          transcript: analysis.transcript,
+          category: analysis.category,
+          riskLevel: analysis.risk_level,
+          latitude: latitude,
+          longitude: longitude,
+          actionTaken: analysis.action_taken,
+        });
+        console.log("💾 Signal logged to database.");
+      } catch (dbError) {
+        console.error("❌ Failed to log signal to database:", dbError);
+      }
 
       return {
         status: "success",
